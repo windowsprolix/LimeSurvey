@@ -4055,4 +4055,62 @@ class remotecontrol_handle
         }
         return false;
     }
+
+    /**
+     * RPC Routine to delete a response based on a token for a specific survey.
+     *
+     * @access public
+     * @param string $sSessionKey Auth credentials
+     * @param int $iSurveyID ID of the survey
+     * @param string $sToken Token value used to identify the response
+     * @return array Result of the operation
+     */
+    public function delete_response_by_token($sSessionKey, $iSurveyID, $sToken)
+    {
+        // Validate session
+        if (!$this->_checkSessionKey($sSessionKey)) {
+            return ['status' => 'Invalid Session Key'];
+        }
+
+        $oSurvey = Survey::model()->findByPk($iSurveyID);
+        if (!$oSurvey) {
+            return ['status' => 'Error: Invalid survey ID'];
+        }
+
+        if ($oSurvey['active'] === 'N') {
+            return ['status' => 'Error: Survey is inactive'];
+        }
+
+        if (!Permission::model()->hasSurveyPermission($iSurveyID, 'responses', 'delete')) {
+            return ['status' => 'No permission'];
+        }
+
+        // Find response by token
+        $oResponse = Response::model($iSurveyID)->findByAttributes(['token' => $sToken]);
+        if (!$oResponse) {
+            return ['status' => 'No response found for the given token'];
+        }
+
+        $iResponseID = (int) $oResponse['id'];
+
+        // Delete uploaded files if file upload questions exist
+        $fileUploadQuestions = Question::model()->findAllByAttributes([
+            'sid' => $iSurveyID,
+            'type' => 'fileuploadquestiontype'
+        ]);
+
+        if (!empty($fileUploadQuestions)) {
+            $oResponse->deleteFiles();
+        }
+
+        // Delete timing info if enabled
+        if (!empty($oSurvey['savetimings']) && $oSurvey['savetimings'] === 'Y') {
+            SurveyTimingDynamic::model($iSurveyID)->deleteByPk($iResponseID);
+        }
+
+        // Delete the response
+        $oResponse->delete();
+
+        return ['status' => 'Success', 'iSurveyID' => $iSurveyID, 'token' => $sToken];
+    }
 }
